@@ -13,7 +13,18 @@
 #'
 #' @return A list containing the slope (h2), intercept, and total expected squared moments.
 #' @keywords internal
-.estimate_h2_struct <- function(beta, se, ld_score, n_snp, n_samp) {
+.estimate_h2_struct <- function(beta, se, ld_score, n_snp, n_samp, idx_subset = NULL) {
+
+
+  # --- 0. Handle Subsetting ---
+  if (!is.null(idx_subset)) {
+    beta <- beta[idx_subset]
+    se <- se[idx_subset]
+    ld_score <- ld_score[idx_subset]
+    # Note: n_snp usually stays as the global M for the LD score correction logic,
+    # but some methods adjust it. Standard LDSC keeps M fixed.
+  }
+
 
   # --- 1. Construct Variables ---
   # Constants (Predictor X)
@@ -50,16 +61,25 @@
   # Weight = 1 / (L_j * Predicted_Variance^2)
   w_final <- 1 / (pmax(ld_score, 1) * E_sq_moment^2)
 
-  # --- 4. Step 3: Final Estimate (The "WLS" Step) ---
+  # --- 4. Step 3: Final Slope (The "WLS" Step) ---
   num_final <- sum(w_final * M_xx * A_xx)
   den_final <- sum(w_final * A_xx^2)
   h_final   <- num_final / den_final
 
-  # Analytic Intercept (Final)
-  sum_w_final  <- sum(w_final)
-  mean_y_final <- sum(w_final * M_xx) / sum_w_final
-  mean_x_final <- sum(w_final * A_xx) / sum_w_final
-  incpt_final  <- mean_y_final - h_final * mean_x_final
+  # --- 5. Back-Calculate Intercept (Constrained) ---
+  # Instead of regression intercept, we use the constraint:
+  # E[sigma^2] = (M-1)/N * h_xx + v_x
+  # Average(sigma^2) is roughly Mean(se^2) across the genome
+
+  # To be precise with the summary stats provided:
+  # We assume total phenotypic variance is approx 1 (normalized).
+  # If not, Mean(se^2) is the best proxy for E[sigma^2] in summary data.
+  # Constraint: Mean(se^2) = ( (M-1)/N ) * h_final + v_final
+
+  mean_se2 <- mean(se^2)
+  term_scaling <- (n_snp - 1) / n_samp
+
+  incpt_final <- mean_se2 - h_final * term_scaling
 
   return(list(
     slope = h_final,
@@ -90,10 +110,21 @@
   h_est <- num / den
 
   # --- 3. Calculate Intercept ---
-  incpt <- mean(M_xx) - h_est * mean(A_xx)
 
-  # Note: We don't need to export "E_total_sq" here because
-  # OLS doesn't use it for weighting.
+  # --- 5. Back-Calculate Intercept (Constrained) ---
+  # Instead of regression intercept, we use the constraint:
+  # E[sigma^2] = (M-1)/N * h_xx + v_x
+  # Average(sigma^2) is roughly Mean(se^2) across the genome
+
+  # To be precise with the summary stats provided:
+  # We assume total phenotypic variance is approx 1 (normalized).
+  # If not, Mean(se^2) is the best proxy for E[sigma^2] in summary data.
+  # Constraint: Mean(se^2) = ( (M-1)/N ) * h_final + v_final
+
+  mean_se2 <- mean(se^2)
+  term_scaling <- (n_snp - 1) / n_samp
+
+  incpt <- mean_se2 -   h_est * term_scaling
 
   return(list(
     slope = h_est,
@@ -125,15 +156,33 @@
 .estimate_hxy_struct <- function(betaX, betaY,
                                  res_XX, res_YY,
                                  ld_score, covXY_theory,
-                                 n_snp, n_x, n_y, overlap_prop) {
+                                 n_snp, n_x, n_y, overlap_prop,
+                                 idx_subset = NULL) {
 
+  # --- 0. Handle Subsetting ---
+  if (!is.null(idx_subset)) {
+    betaX <- betaX[idx_subset]
+    betaY <- betaY[idx_subset]
+    ld_score <- ld_score[idx_subset]
+
+    # Crucial: We must also subset the expectations passed from the single-trait runs
+    # assuming res_XX$E_total_sq is the full vector
+    res_XX$E_total_sq <- res_XX$E_total_sq[idx_subset]
+    res_YY$E_total_sq <- res_YY$E_total_sq[idx_subset]
+  }
   # --- 1. Construct Variables ---
+  # Define the global noise term ONCE
+  # This is (No / Ny) * Sigma_XY
+  total_noise_term <- (overlap_prop / n_y) * covXY_theory
+
+
   term_N <- (n_snp * overlap_prop) / n_y
   xi <- (1 + overlap_prop/n_y) * ld_score + term_N
   A_xy <- xi - term_N # Predictor (X)
 
-  noise_correction <- covXY_theory * (overlap_prop / n_y)
-  M_xy <- betaX * betaY - noise_correction # Response (Y)
+  # Construct Response (Y)
+  # M_xy = Raw_Product - Total_Noise
+  M_xy <- betaX * betaY - total_noise_term
 
   # --- 2. Step 1: Initial Estimates (The "WLS" with weights as squared-LD Step) ---
   w_step1 <- 1 / pmax(ld_score, 1)^2
@@ -164,12 +213,13 @@
   den_final <- sum(w_final * A_xy^2)
   h_xy_final <- num_final / den_final
 
-  # Analytic Intercept (Final)
-  sum_w_final  <- sum(w_final)
-  mean_y_final <- sum(w_final * M_xy) / sum_w_final
-  mean_x_final <- sum(w_final * A_xy) / sum_w_final
-  incpt_final  <- mean_y_final - h_xy_final * mean_x_final
+  # --- 5. Back-Calculate Intercept (Constrained Eq 2) ---
+  # (No/NxNy) * Sigma_XY = (M * No / NxNy) * h_xy + v_xy
+  # Let "Total Noise" = (No/NxNy) * Sigma_XY
+  # Let "Scaling"     = (M * No / NxNy)
 
+  # Note: term_N is exactly (M * No / Ny), so we reuse it!
+  incpt_final <- total_noise_term - h_xy_final * term_N
   return(list(
     slope = h_xy_final,
     incpt = incpt_final
@@ -200,7 +250,7 @@
   h_xy_est <- num / den
 
   # --- 3. Calculate Intercept ---
-  incpt <- mean(M_xy) - h_xy_est * mean(A_xy)
+  incpt_final <- noise_correction - h_xy_estl * term_N
 
   return(list(
     slope = h_xy_est,

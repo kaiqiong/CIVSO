@@ -2,7 +2,7 @@
 #' @export
 print.CIVSO <- function(x, ...) {
   cat("\n========================================\n")
-  cat("   CIVSO Causal Estimator (Zhao 2026)   \n")
+  cat("   CIVSO Causal Estimator  \n")
   cat("========================================\n")
 
   cat(sprintf("Method used   : %s\n",
@@ -14,13 +14,28 @@ print.CIVSO <- function(x, ...) {
   cat("Causal Estimate:\n")
   cat("----------------\n")
   cat(sprintf("Beta          : %.5f\n", x$beta))
-
-  # Smart SE Reporting
-  se_lab <- ifelse(is.na(x$se_jack), "Analytic", "Jackknife")
-  cat(sprintf("SE (%-9s) : %.5f\n", se_lab, x$se))
-  cat(sprintf("P-value       : %.3e\n", x$p))
   cat("\n")
 
+  # 2. Standard Errors (Show all available)
+  cat("Inference:\n")
+  cat("----------------\n")
+
+  # Check availability
+  has_jack <- !is.null(x$se_jack) && !is.na(x$se_jack)
+  has_anal <- !is.null(x$se_analytic) && !is.na(x$se_analytic)
+
+  if (has_jack) {
+    cat(sprintf("SE (Jackknife): %.5f  [P = %.3e]\n", x$se_jack, x$p_jack))
+  }
+
+  if (has_anal) {
+    cat(sprintf("SE (Analytic) : %.5f  [P = %.3e]\n", x$se_analytic, x$p_analytic))
+  }
+
+  if (!has_jack && !has_anal) {
+    cat("SE            : Not available (Check warnings)\n")
+  }
+  cat("\n")
   # 2. Print Structural Parameters (Calls print.dMAR)
   print(x$model_fit)
 

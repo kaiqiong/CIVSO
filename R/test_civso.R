@@ -94,6 +94,29 @@ res_diag <- CIVSO(
 )
 print(res_diag)
 
+
+message("\n------------------------------------------------")
+message("Running Test 1b: Diagonal Mode (Hybrid with Exact SE)...")
+
+res_diag_hybrid <- CIVSO(
+  betaX = sumstats$betaX,
+  betaY = sumstats$betaY,
+  seX   = sumstats$seX,
+  seY   = sumstats$seY,
+  ld_score = sumstats$ld,
+  n_snp = n_snps_total,
+  n_x = n_x,
+  n_y = n_y,
+  overlap_prop = overlap_prop,
+  covXY_theory = 0.0,
+
+  method = "diagonal",       # Uses Fast Point Estimator
+  blocks = civso_blocks,     # Uses these for EXACT Analytic SE
+  n_jack_blocks = 10
+)
+
+print(res_diag_hybrid)
+
 message("\n------------------------------------------------")
 message("Running Test 2: Full-Moment GLS...")
 res_gls <- CIVSO(

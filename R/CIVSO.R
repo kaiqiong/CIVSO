@@ -27,6 +27,8 @@
 #'   Each element of the list must contain:
 #'   * `$R`: The LD correlation matrix for the block.
 #'   * `$betaX`, `$seX`, `$betaY`, `$seY`: Subset vectors for the block.
+#'   REQUIRED for `method="full_gls"`.
+#'   OPTIONAL for `method="diagonal"`, but REQUIRED if you want Analytic SE.
 #' @param n_jack_blocks Integer. Number of blocks to use for the Block-Jackknife SE estimation (default: 200). Ignored if `blocks` are provided explicitly.
 #'
 #' @return A list of class `"CIVSO"` containing:
@@ -59,6 +61,9 @@ CIVSO <- function(betaX, betaY, seX, seY, ld_score, n_snp, n_x, n_y, overlap_pro
   se_analytic <- NA
   p_analytic  <- NA
 
+  # We ONLY calculate this if blocks are provided.
+  # This works even if method="diagonal" (Hybrid Mode: Fast Point + Exact SE)
+
   if (!is.null(blocks)) {
     var_an <- .compute_analytic_variance(
       blocks = blocks,
@@ -72,8 +77,11 @@ CIVSO <- function(betaX, betaY, seX, seY, ld_score, n_snp, n_x, n_y, overlap_pro
       # Constants
       n_snp = n_snp, n_x = n_x, n_y = n_y, overlap_prop = overlap_prop
     )
-    se_analytic <- sqrt(var_an)
-    p_analytic  <- 2 * pnorm(abs(beta_point / se_analytic), lower.tail = FALSE)
+    if (!is.na(var_an)) {
+      se_analytic <- sqrt(var_an)
+      p_analytic  <- 2 * pnorm(abs(beta_point / se_analytic), lower.tail = FALSE)
+    }
+
   }
 
   # --- 3. Jackknife Variance (Safety Check) ---

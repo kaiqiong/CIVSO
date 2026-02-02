@@ -34,7 +34,7 @@ print.dMAR <- function(x, ...) {
   cat("----------------------------------------\n")
 
   # Helper to format numbers
-  fmt <- function(v) sprintf("%.4f", v)
+  fmt <- function(v) sprintf("%.8f", v)
 
   # Check if we have comparison data (i.e., if method was GLS)
   is_gls <- x$method == "full_gls"

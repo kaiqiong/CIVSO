@@ -2,7 +2,7 @@
 % Please edit documentation in R/CIVSO.R
 \name{CIVSO}
 \alias{CIVSO}
-\title{Main CIVSO Estimation Function}
+\title{CIVSO: Correlated IVs and Sample Overlap Causal Estimator}
 \usage{
 CIVSO(
   betaX,
@@ -14,10 +14,64 @@ CIVSO(
   n_x,
   n_y,
   overlap_prop,
-  method = "diagonal_WLS",
-  param_alpha = 0.05
+  covXY_theory,
+  method = "diagonal",
+  blocks = NULL,
+  n_jack_blocks = 200
 )
 }
+\arguments{
+\item{betaX}{Numeric vector. Effect sizes for the Exposure trait.}
+
+\item{betaY}{Numeric vector. Effect sizes for the Outcome trait.}
+
+\item{seX}{Numeric vector. Standard errors for the Exposure trait.}
+
+\item{seY}{Numeric vector. Standard errors for the Outcome trait.}
+
+\item{ld_score}{Numeric vector. LD scores ($\ell_j$) for each SNP.}
+
+\item{n_snp}{Integer. The **global** total number of SNPs ($M$) in the reference panel (e.g., 1,000,000), not just the number of SNPs in the input vectors.}
+
+\item{n_x}{Integer. Sample size of the Exposure GWAS.}
+
+\item{n_y}{Integer. Sample size of the Outcome GWAS.}
+
+\item{overlap_prop}{Numeric. The proportion of sample overlap ($N_{overlap} / N_{total}$). Ranges from 0 (disjoint) to 1 (full overlap).}
+
+\item{covXY_theory}{Numeric. The theoretical or estimated phenotypic covariance ($\sigma_{XY}$) between the two traits. Often estimated via the intercept of an initial LDSC regression.}
+
+\item{method}{Character string. Either `"diagonal"` (default) or `"full_gls"`.
+* `"diagonal"`: Uses fast Diagonal Moment-Alignment Regression.
+* `"full_gls"`: Uses Full-Moment GLS to refine structural parameters ($h_{xx}, h_{xy}$). Requires `blocks`.}
+
+\item{blocks}{List. A list of LD blocks (required if `method="full_gls"` or for Analytic SE).
+Each element of the list must contain:
+* `$R`: The LD correlation matrix for the block.
+* `$betaX`, `$seX`, `$betaY`, `$seY`: Subset vectors for the block.}
+
+\item{n_jack_blocks}{Integer. Number of blocks to use for the Block-Jackknife SE estimation (default: 200). Ignored if `blocks` are provided explicitly.}
+}
+\value{
+A list of class `"CIVSO"` containing:
+\item{beta}{The causal effect point estimate.}
+\item{se}{The primary standard error (defaults to Jackknife SE, or Analytic SE if Jackknife is impossible).}
+\item{p}{The P-value associated with the primary SE.}
+\item{se_jack}{Standard error estimated via Block-Jackknife.}
+\item{p_jack}{P-value derived from the Jackknife SE.}
+\item{se_analytic}{Standard error estimated via the asymptotic Delta Method formula (requires `blocks`).}
+\item{p_analytic}{P-value derived from the Analytic SE.}
+\item{method}{The method used ("diagonal" or "full_gls").}
+\item{params}{A list of the estimated structural parameters used in the correction ($h_{xx}, v_x, h_{xy}, v_{xy}, h_{yy}, v_y$).}
+\item{n_snps}{The global SNP count used in calculations.}
+}
 \description{
-Main CIVSO Estimation Function
+Estimates the causal effect ($\beta_0$) of an exposure on an outcome using GWAS summary statistics.
+The estimator explicitly corrects for:
+1. **Sample Overlap Bias:** Using a phenotypic covariance constraint ($v_{XY}$).
+2. **LD-Induced Noise Inflation:** Using structural heritability parameters ($h_{xx}, v_X$).
+
+It offers two calibration methods:
+* **Diagonal (dMAR):** Fast, robust, uses only LD scores. Best for large-scale screens.
+* **Full-Moment GLS:** High-precision, accounts for local LD correlation structure. Best for final reporting.
 }

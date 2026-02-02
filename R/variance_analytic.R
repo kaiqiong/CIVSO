@@ -6,6 +6,9 @@
 #'
 #' V_CIVSO = (1 / mu_D^2) * Sum [ sigma_X*sigma_Y + sigma_XY^2 + 2*beta*sigma_X*(beta*sigma_X - 2*sigma_XY) ]
 #'
+#' @note
+#' This function strictly requires LD blocks (`blocks`).
+#' It computes the EXACT variance based on matrix traces.
 #' @keywords internal
 .compute_analytic_variance <- function(blocks,
                                        beta_hat,
@@ -13,6 +16,11 @@
                                        h_yy, v_y,
                                        h_xy, v_xy,
                                        n_snp, n_x, n_y, overlap_prop) {
+
+  # 1. Strict Requirement
+  if (is.null(blocks)) {
+    return(NA) # Cannot compute exact variance without LD matrices
+  }
 
   # Accumulators
   sum_variance_terms <- 0
@@ -85,10 +93,29 @@
   }
 
   # --- 5. Final Scaling (Equation 13) ---
+
+
+  # Safety 1: Denominator near zero?
+  # If h_xx is effectively zero, the theoretical denominator vanishes.
+  if (abs(h_xx) < 1e-6 || abs(sum_xi_trace) < 1e-6) {
+    warning("Analytic SE: Theoretical denominator (mu_D) is effectively zero. Returning NA.")
+    return(NA)
+  }
+
   # Denominator is mu_D^2 = (h_xx * Sum_xi)^2
   mu_D <- h_xx * sum_xi_trace
 
   final_var <- sum_variance_terms / (mu_D^2)
+
+  # Safety 2: Negative Variance?
+  # This happens if Cov(A,D) term overwhelms Var(A)+Var(D).
+  # Often occurs when beta is large and h2 is estimated poorly (negative).
+  if (final_var < 0) {
+    # We return NA because sqrt(negative) is impossible
+    # In a simulation loop, you might treat this as 'failed convergence'
+    warning(sprintf("Analytic SE: Estimated variance is negative (%.2e). Returning NA.", final_var))
+    return(NA)
+  }
 
   return(final_var)
 }

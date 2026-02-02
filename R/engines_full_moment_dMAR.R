@@ -207,8 +207,8 @@
     MASS::ginv(Omega)
   })
 
-  num_part <- as.numeric(t(a_vec) %*% Omega_inv %*% m_vec)
-  den_part <- as.numeric(t(a_vec) %*% Omega_inv %*% a_vec)
+  num_part <- as.numeric(t(a_vec) %*% invOmega %*% m_vec)
+  den_part <- as.numeric(t(a_vec) %*% invOmega %*% a_vec)
 
   return(list(num = num_part, den = den_part))
 }

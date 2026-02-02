@@ -250,7 +250,7 @@
   h_xy_est <- num / den
 
   # --- 3. Calculate Intercept ---
-  incpt_final <- noise_correction - h_xy_estl * term_N
+  incpt_final <- noise_correction - h_xy_est * term_N
 
   return(list(
     slope = h_xy_est,

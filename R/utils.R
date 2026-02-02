@@ -63,3 +63,24 @@ create_civso_blocks <- function(sumstats, ld_list,
 
   return(formatted_blocks)
 }
+
+
+
+
+
+#' Internal Helper: Commutation Permutation Vector
+#' Returns indices to permute columns for the Commutation Matrix K
+#' @keywords internal
+.commutation_matrix <- function(m) {
+  # The commutation matrix K_mm is a permutation matrix.
+  # We return the index vector p such that A[, p] is A * K
+  # K maps vec(A) to vec(A')
+
+  # Create a matrix of indices
+  idx_mat <- matrix(1:(m*m), nrow=m, ncol=m)
+
+  # Transpose it to get the permutation
+  perm_idx <- as.vector(t(idx_mat))
+
+  return(perm_idx)
+}

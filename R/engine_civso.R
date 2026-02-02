@@ -70,7 +70,7 @@
       res_gls_xx <- .estimate_block_gls_h2(
         beta = blocks[[b]]$betaX, se = blocks[[b]]$seX, R = blocks[[b]]$R,
         n_total = n_snp, n_samp = n_x,
-        h_init = calib_X_diag$slope, v_init = calib_X_diag$incpt
+        h_init = calib_X$slope, v_init = calib_X$incpt
       )
       num_gls_xx <- num_gls_xx + res_gls_xx$num
       den_gls_xx <- den_gls_xx + res_gls_xx$den

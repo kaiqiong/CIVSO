@@ -12,3 +12,7 @@ LazyData: true
 URL: https://github.com/kaiqiong/CIVSO
 BugReports: https://github.com/kaiqiong/CIVSO/issues
 RoxygenNote: 7.3.1
+Imports:
+    MASS,
+    stats,
+    utils

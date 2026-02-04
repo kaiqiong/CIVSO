@@ -57,7 +57,7 @@ CIVSO <- function(betaX, betaY, seX, seY, ld_score, n_snp, n_x, n_y, overlap_pro
   )
   beta_point <- est_result$beta
 
-  # --- 2. Analytic Variance (Ideal for Single Block) ---
+  # --- 2. Analytic Variance(Optimized) ---
   se_analytic <- NA
   p_analytic  <- NA
 
@@ -65,8 +65,13 @@ CIVSO <- function(betaX, betaY, seX, seY, ld_score, n_snp, n_x, n_y, overlap_pro
   # This works even if method="diagonal" (Hybrid Mode: Fast Point + Exact SE)
 
   if (!is.null(blocks)) {
+
+    # A. Optimize Blocks (Calculate Traces if missing)
+    # This is fast for single runs, and instant for pre-calculated simulations
+    blocks_enriched <- .enrich_blocks_with_traces(blocks)
+
     var_an <- .compute_analytic_variance(
-      blocks = blocks,
+      blocks = blocks_enriched,
       beta_hat = beta_point,
 
       # Structural parameters

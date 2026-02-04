@@ -1,86 +1,40 @@
-#' Create Block Data for CIVSO
+#' Internal: Pre-calculate Trace Constants for LD Blocks
 #'
 #' @description
-#' Helper function to partition genome-wide summary statistics into
-#' the block format required by CIVSO's GLS and Analytic SE engines.
+#' Enriches the 'blocks' list with scalar trace values (tr_R2, tr_R3, tr_R4)
+#' required for the Analytic Variance calculation.
+#' Uses the fast 'sum(A*B)' trick for symmetric matrices.
 #'
-#' @param sumstats A data.frame containing global summary statistics.
-#'   Must have a column `snp` (ID) and columns for beta/se.
-#' @param ld_list A list of LD correlation matrices (R).
-#'   Each matrix must have row/col names matching the SNP IDs in `sumstats`.
-#' @param col_map Named vector mapping standard names to your column names.
-#'   Default: c(snp="snp", betaX="betaX", seX="seX", betaY="betaY", seY="seY")
-#'
-#' @return A list of blocks formatted for CIVSO.
-#' @export
-create_civso_blocks <- function(sumstats, ld_list,
-                                col_map = c(snp="snp", betaX="betaX", seX="seX",
-                                            betaY="betaY", seY="seY")) {
+#' @param blocks List of LD blocks (containing $R matrices).
+#' @return The same list, but each block has $tr_R2, $tr_R3, $tr_R4 added.
+#' @keywords internal
+.enrich_blocks_with_traces <- function(blocks) {
+  if (is.null(blocks)) return(NULL)
 
-  formatted_blocks <- list()
-
-  # Ensure SNP column is character for matching
-  sumstats[[col_map["snp"]]] <- as.character(sumstats[[col_map["snp"]]])
-
-  for (i in seq_along(ld_list)) {
-    R <- ld_list[[i]]
-
-    # Get SNPs in this LD block (assuming R has row names)
-    if(is.null(rownames(R))) {
-      stop(sprintf("LD matrix in block %d is missing row names (SNP IDs).", i))
-    }
-    block_snps <- rownames(R)
-
-    # Match Summary Stats to this Block
-    # We use match() to ensure strict ordering: Data must match R exactly.
-    match_idx <- match(block_snps, sumstats[[col_map["snp"]]])
-
-    # Safety Check: Missing SNPs?
-    if (any(is.na(match_idx))) {
-      missing_count <- sum(is.na(match_idx))
-      warning(sprintf("Block %d: %d SNPs in LD matrix not found in summary stats. Dropping missing from R.", i, missing_count))
-
-      # Alignment Strategy: Intersection
-      valid_indices <- which(!is.na(match_idx))
-      # 1. Update R to keep only found SNPs
-      R <- R[valid_indices, valid_indices]
-      # 2. Update match index
-      match_idx <- match_idx[valid_indices]
-    }
-
-    # Extract Data
-    subset_data <- sumstats[match_idx, ]
-
-    # Build the List Element
-    formatted_blocks[[i]] <- list(
-      R = R,
-      betaX = subset_data[[col_map["betaX"]]],
-      seX   = subset_data[[col_map["seX"]]],
-      betaY = subset_data[[col_map["betaY"]]],
-      seY   = subset_data[[col_map["seY"]]]
-    )
+  # Check if first block already has traces (Assume all do if first does)
+  if (!is.null(blocks[[1]]$tr_R4)) {
+    return(blocks) # Already enriched, skip work.
   }
 
-  return(formatted_blocks)
-}
+  for (i in seq_along(blocks)) {
+    # Extract R
+    R <- blocks[[i]]$R
 
+    # 1. R^2 Matrix (Needed once)
+    LD2 <- R %*% R
 
+    # 2. Compute Scalar Traces (The "Trace Trick")
+    # Tr(A B) = sum(A * B) for symmetric matrices
+    tr_R2 <- sum(R * R)       # Tr(R^2)
+    tr_R3 <- sum(LD2 * R)     # Tr(R^3) --- double sumation of l_jm and rho_jm
+    tr_R4 <- sum(LD2 * LD2)   # Tr(R^4)
 
+    # 3. Store
+    blocks[[i]]$tr_R2 <- tr_R2
+    blocks[[i]]$tr_R3 <- tr_R3
+    blocks[[i]]$tr_R4 <- tr_R4
+    blocks[[i]]$size  <- nrow(R)
+  }
 
-
-#' Internal Helper: Commutation Permutation Vector
-#' Returns indices to permute columns for the Commutation Matrix K
-#' @keywords internal
-.commutation_matrix <- function(m) {
-  # The commutation matrix K_mm is a permutation matrix.
-  # We return the index vector p such that A[, p] is A * K
-  # K maps vec(A) to vec(A')
-
-  # Create a matrix of indices
-  idx_mat <- matrix(1:(m*m), nrow=m, ncol=m)
-
-  # Transpose it to get the permutation
-  perm_idx <- as.vector(t(idx_mat))
-
-  return(perm_idx)
+  return(blocks)
 }

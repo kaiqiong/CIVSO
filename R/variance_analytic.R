@@ -1,14 +1,9 @@
-#' Internal Engine: Analytic Variance (Delta Method)
+#' Internal Engine: Analytic Variance (Optimized)
 #'
 #' @description
-#' Computes the asymptotic variance of the CIVSO estimator using the
-#' closed-form expression (Equation \ref{varexp}) derived via the Delta Method.
+#' Computes the asymptotic variance using pre-calculated trace scalars.
+#' Complexity: O(1) relative to matrix size (instant).
 #'
-#' V_CIVSO = (1 / mu_D^2) * Sum [ sigma_X*sigma_Y + sigma_XY^2 + 2*beta*sigma_X*(beta*sigma_X - 2*sigma_XY) ]
-#'
-#' @note
-#' This function strictly requires LD blocks (`blocks`).
-#' It computes the EXACT variance based on matrix traces.
 #' @keywords internal
 .compute_analytic_variance <- function(blocks,
                                        beta_hat,
@@ -18,104 +13,60 @@
                                        n_snp, n_x, n_y, overlap_prop) {
 
   # 1. Strict Requirement
-  if (is.null(blocks)) {
-    return(NA) # Cannot compute exact variance without LD matrices
+  if (is.null(blocks)) return(NA)
+
+  # 2. Aggregate Traces (Sum across all blocks)
+  Sum_R2 <- 0; Sum_R3 <- 0; Sum_R4 <- 0; Sum_M  <- 0
+
+  for(b in seq_along(blocks)) {
+    # Note: Blocks must be enriched via .enrich_blocks_with_traces() before calling this
+    Sum_R2 <- Sum_R2 + blocks[[b]]$tr_R2
+    Sum_R3 <- Sum_R3 + blocks[[b]]$tr_R3
+    Sum_R4 <- Sum_R4 + blocks[[b]]$tr_R4
+    Sum_M  <- Sum_M  + blocks[[b]]$size
   }
 
-  # Accumulators
-  sum_variance_terms <- 0
-  sum_xi_trace <- 0      # Needed for theoretical denominator (mu_D)
+  # 3. Define Structural Coefficients (Scalars)
+  # Constants
+  c1_x <- 1 + 1/n_x;  c2_x <- n_snp/n_x
+  c1_y <- 1 + 1/n_y;  c2_y <- n_snp/n_y
+
+  d1 <- 1 + overlap_prop/n_y
+  d2 <- (n_snp * overlap_prop) / n_y
+
+  # Structural Params (A * R^2 + B * R)
+  A_x <- h_xx * c1_x;  B_x <- h_xx * c2_x + v_x
+  A_y <- h_yy * c1_y;  B_y <- h_yy * c2_y + v_y
+  A_xy <- h_xy * d1;   B_xy <- h_xy * d2 + v_xy
+
+  # 4. Global Variance Calculation
+
+  # Denominator Trace: Tr(Xi)
+  sum_xi_trace <- d1 * Sum_R2 + d2 * Sum_M
+
+  # Numerator Components
+  # Helper to compute Tr((A1*R^2 + B1*R)(A2*R^2 + B2*R))
+  calc_trace_prod <- function(A1, B1, A2, B2) {
+    term4 <- A1 * A2 * Sum_R4
+    term3 <- (A1 * B2 + A2 * B1) * Sum_R3
+    term2 <- B1 * B2 * Sum_R2
+    return(term4 + term3 + term2)
+  }
+
+  T1 <- calc_trace_prod(A_x, B_x, A_y, B_y)     # Tr(S_XX * S_YY)
+  T2 <- calc_trace_prod(A_xy, B_xy, A_xy, B_xy) # Tr(S_XY * S_XY)
+  T3 <- calc_trace_prod(A_x, B_x, A_x, B_x)     # Tr(S_XX * S_XX)
+  T4 <- calc_trace_prod(A_x, B_x, A_xy, B_xy)   # Tr(S_XX * S_XY)
 
   b2 <- beta_hat^2
+  sum_variance_terms <- T1 + T2 + 2 * b2 * T3 - 4 * beta_hat * T4
 
-  for(b in 1:length(blocks)) {
-    blk <- blocks[[b]]
-    R <- blk$R
+  # 5. Final Scaling
+  if (abs(h_xx) < 1e-8 || abs(sum_xi_trace) < 1e-8) return(NA)
 
-    # --- 1. Construct Sigmas (Covariance Structures) ---
-    LD2_mat <- R %*% R
-
-    # Sigma XX (Covariance of Gamma_hat)
-    k_scale_X <- 1 + 1/n_x
-    k_noise_X <- n_snp / n_x
-    Kappa_X   <- k_scale_X * LD2_mat + k_noise_X * R
-    Sigma_XX  <- h_xx * Kappa_X + v_x * R
-
-    # Sigma YY (Covariance of Gamma_hat_outcome)
-    k_scale_Y <- 1 + 1/n_y
-    k_noise_Y <- n_snp / n_y
-    Kappa_Y   <- k_scale_Y * LD2_mat + k_noise_Y * R
-    Sigma_YY  <- h_yy * Kappa_Y + v_y * R
-
-    # Sigma XY (Cross-Covariance)
-    # Xi Matrix construction matches geometric constant xi_j
-    term_N    <- (n_snp * overlap_prop) / n_y
-    xi_scale  <- 1 + overlap_prop/n_y
-    Xi_mat    <- xi_scale * LD2_mat + term_N * R
-
-    Sigma_XY  <- h_xy * Xi_mat + v_xy * R
-
-    # --- 2. Calculate Theoretical Expectation of Denominator ---
-    # Text: mu_D = h_xx * Sum(xi_j)
-    # The diagonal of Xi_mat contains the vector xi_j for this block
-    sum_xi_trace <- sum_xi_trace + sum(diag(Xi_mat))
-
-    # --- 3. Calculate Variance Components (Traces) ---
-    # We use sum(A * B) which is equivalent to Tr(AB) for symmetric matrices
-    # Corresponds to the double summation Sum_{j,m}
-
-    # (i) Var(A) components
-    # T1 = Sum(sigma_X,jm * sigma_Y,jm)
-    T1 <- sum(Sigma_XX * Sigma_YY)
-    # T2 = Sum(sigma_XY,jm^2)
-    T2 <- sum(Sigma_XY * Sigma_XY)
-
-    # (ii) Var(D) component
-    # T3 = Sum(sigma_X,jm^2) -> Var(D) = 2 * T3
-    T3 <- sum(Sigma_XX * Sigma_XX)
-
-    # (iii) Cov(A,D) component
-    # T4 = Sum(sigma_X,jm * sigma_XY,jm) -> Cov(A,D) = 2 * T4
-    T4 <- sum(Sigma_XX * Sigma_XY)
-
-    # --- 4. Combine Block Contribution ---
-    # Formula: Var(A) + beta^2*Var(D) - 2*beta*Cov(A,D)
-    # Var(A) = T1 + T2
-    # Var(D) = 2 * T3
-    # Cov(A,D) = 2 * T4
-    #
-    # Expansion: (T1 + T2) + beta^2*(2*T3) - 2*beta*(2*T4)
-    #          = T1 + T2 + 2*beta^2*T3 - 4*beta*T4
-
-    block_val <- T1 + T2 + 2 * b2 * T3 - 4 * beta_hat * T4
-
-    sum_variance_terms <- sum_variance_terms + block_val
-  }
-
-  # --- 5. Final Scaling (Equation 13) ---
-
-
-  # Safety 1: Denominator near zero?
-  # If h_xx is effectively zero, the theoretical denominator vanishes.
-  if (abs(h_xx) < 1e-6 || abs(sum_xi_trace) < 1e-6) {
-    warning("Analytic SE: Theoretical denominator (mu_D) is effectively zero. Returning NA.")
-    return(NA)
-  }
-
-  # Denominator is mu_D^2 = (h_xx * Sum_xi)^2
   mu_D <- h_xx * sum_xi_trace
-
   final_var <- sum_variance_terms / (mu_D^2)
 
-  # Safety 2: Negative Variance?
-  # This happens if Cov(A,D) term overwhelms Var(A)+Var(D).
-  # Often occurs when beta is large and h2 is estimated poorly (negative).
-  if (final_var < 0) {
-    # We return NA because sqrt(negative) is impossible
-    # In a simulation loop, you might treat this as 'failed convergence'
-    warning(sprintf("Analytic SE: Estimated variance is negative (%.2e). Returning NA.", final_var))
-    return(NA)
-  }
-
+  if (final_var < 0) return(NA)
   return(final_var)
 }

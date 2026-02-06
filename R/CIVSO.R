@@ -57,37 +57,86 @@ CIVSO <- function(betaX, betaY, seX, seY, ld_score, n_snp, n_x, n_y, overlap_pro
   )
   beta_point <- est_result$beta
 
-  # --- 2. Analytic Variance(Optimized) ---
-  se_analytic <- NA
-  p_analytic  <- NA
 
-  # We ONLY calculate this if blocks are provided.
-  # This works even if method="diagonal" (Hybrid Mode: Fast Point + Exact SE)
 
-  if (!is.null(blocks)) {
+  # 2. Variance Calibration (The New Step)
+# -----------------------------------
+# We calculate OLS parameters specifically to feed into the Variance Formula.
+# We do NOT use these for the beta, only for the SE.
 
-    # A. Optimize Blocks (Calculate Traces if missing)
-    # This is fast for single runs, and instant for pre-calculated simulations
-    blocks_enriched <- .enrich_blocks_with_traces(blocks)
+# Calculate OLS estimates for h_xx, h_yy, h_xy
 
-    var_an <- .compute_analytic_variance(
-      blocks = blocks_enriched,
-      beta_hat = beta_point,
+ols_XX <- .estimate_h2_ols(betaX, seX, ld_score, n_snp, n_x)
+ols_YY <- .estimate_h2_ols(betaY, seY, ld_score, n_snp, n_y) # You might need to write this wrapper
+ols_XY <- .estimate_hxy_ols(betaX, betaY, ld_score, covXY_theory, n_snp,n_x, n_y, overlap_prop) # You already have this in engines_diagonal_dMAR.R
 
-      # Structural parameters
-      h_xx = est_result$params$h_xx, v_x  = est_result$params$v_x,
-      h_yy = est_result$params$h_yy, v_y  = est_result$params$v_y,
-      h_xy = est_result$params$h_xy, v_xy = est_result$params$v_xy,
+# Extract OLS Parameters
+h_xx_calib <- ols_XX$slope;  v_x_calib <- ols_XX$incpt
+h_yy_calib <- ols_YY$slope;  v_y_calib <- ols_YY$incpt
+h_xy_calib <- ols_XY$slope;  v_xy_calib <- ols_XY$incpt
 
-      # Constants
-      n_snp = n_snp, n_x = n_x, n_y = n_y, overlap_prop = overlap_prop
-    )
-    if (!is.na(var_an)) {
-      se_analytic <- sqrt(var_an)
-      p_analytic  <- 2 * pnorm(abs(beta_point / se_analytic), lower.tail = FALSE)
-    }
+# 3. Compute Variance using OLS Inputs
+# -----------------------------------
 
+
+se_analytic <- .compute_analytic_variance(
+    blocks = blocks,
+   beta_hat =beta_point,
+    # PASS OLS PARAMETERS HERE:
+    h_xx = h_xx_calib, v_x = v_x_calib,
+    h_yy = h_yy_calib, v_y = v_y_calib,
+    h_xy = h_xy_calib, v_xy = v_xy_calib,
+
+    n_snp = n_snp, n_x = n_x, n_y = n_y, overlap_prop = overlap_prop
+)
+
+# ===========================================================================
+# 4. Variance Calibration (Hybrid OLS)
+# ===========================================================================
+# "Efficiency for Beta, Robustness for SE."
+# We calculate OLS structural parameters specifically for the analytic variance.
+# OLS ignores minor background noise that inflates WLS intercepts.
+
+# A. Estimate Single-Trait OLS
+ols_XX <- .estimate_h2_ols(betaX, seX, ld_score, n_snp, n_x)
+ols_YY <- .estimate_h2_ols(betaY, seY, ld_score, n_snp, n_y)
+
+# B. Estimate Cross-Trait OLS (Using existing function)
+ols_XY <- .estimate_hxy_ols(betaX, betaY, ld_score, covXY_theory,
+                            n_snp, n_x, n_y, overlap_prop)
+
+# ===========================================================================
+# 5. Analytic Variance Calculation
+# ===========================================================================
+se_analytic <- NA
+p_analytic  <- NA
+
+# Check if we have blocks available (Required for Exact Analytic method)
+if (!is.null(blocks)) {
+
+  # Use the OLS parameters for robustness
+  se_analytic <- .compute_analytic_variance(
+    blocks = blocks,
+   beta_hat =  beta_point,
+    # Pass Calibrated OLS Inputs:
+    h_xx = ols_XX$slope, v_x = ols_XX$incpt,
+    h_yy = ols_YY$slope, v_y = ols_YY$incpt,
+    h_xy = ols_XY$slope, v_xy = ols_XY$incpt,
+    n_snp = n_snp, n_x = n_x, n_y = n_y, overlap_prop = overlap_prop
+  )
+
+  if (!is.na(se_analytic) && se_analytic > 0) {
+    z_score    <- beta_point / se_analytic
+    p_analytic <- 2 * pnorm(abs(z_score), lower.tail = FALSE)
   }
+} else {
+  # If no blocks provided (Diagonal mode without blocks), we can't do exact analytic SE.
+  # You might want to warn or fall back to a simpler approximation.
+  if(method == "diagonal") {
+    # Optional: Add a warning or just leave NA
+    # warning("Analytic SE requires LD blocks. Please provide 'blocks'.")
+  }
+}
 
   # --- 3. Jackknife Variance (Safety Check) ---
   se_jack <- NA

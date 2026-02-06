@@ -26,6 +26,7 @@
   }
 
 
+
   # --- 1. Construct Variables ---
   # Constants (Predictor X)
   # kappa = (1 + 1/N)*l_j + M/N
@@ -47,12 +48,20 @@
   h_init   <- num_init / den_init
 
   # Fast Intercept (Step 1)
-  # v_init = Mean_Y_weighted - Slope * Mean_X_weighted
-  sum_w    <- sum(w_step1)
-  mean_y_w <- sum(w_step1 * M_xx) / sum_w
-  mean_x_w <- sum(w_step1 * A_xx) / sum_w
-  v_init   <- mean_y_w - h_init * mean_x_w
+  # v_init = Mean_Y_weighted - Slope * Mean_X_weighted ---- This is wrong
+  #sum_w    <- sum(w_step1)
+  #mean_y_w <- sum(w_step1 * M_xx) / sum_w
+  #mean_x_w <- sum(w_step1 * A_xx) / sum_w
+  #v_init   <- mean_y_w - h_init * mean_x_w
 
+
+  # Fast Intercept (Step 1) - STRUCTURAL BACK-CALCULATION
+  # The regression intercept is NOT free. It is constrained by the Total Moment.
+  # v = Mean(SE^2) - h * (M-1)/N
+  mean_se2 <- mean(se^2)
+  term_scaling <- (n_snp - 1) / n_samp
+
+  v_init <- mean_se2 - h_init * term_scaling
   # --- 3. Step 2: Final WLS Weights ---
   # We use the Step 1 estimates to predict the variance structure
   # E[gamma^2] = h * kappa + v
@@ -76,8 +85,7 @@
   # If not, Mean(se^2) is the best proxy for E[sigma^2] in summary data.
   # Constraint: Mean(se^2) = ( (M-1)/N ) * h_final + v_final
 
-  mean_se2 <- mean(se^2)
-  term_scaling <- (n_snp - 1) / n_samp
+
 
   incpt_final <- mean_se2 - h_final * term_scaling
 
@@ -95,7 +103,14 @@
 #' @description Performs unweighted regression (w=1) for single-trait heritability.
 #' Used as a baseline.
 #' @keywords internal
-.estimate_h2_ols <- function(beta, se, ld_score, n_snp, n_samp) {
+.estimate_h2_ols <- function(beta, se, ld_score, n_snp, n_samp, idx_subset = NULL) {
+
+  # --- 0. Handle Subsetting ---
+  if (!is.null(idx_subset)) {
+    beta <- beta[idx_subset]
+    se <- se[idx_subset]
+    ld_score <- ld_score[idx_subset]
+  }
 
   # --- 1. Construct Variables (Same as WLS) ---
   kappa <- (1 + 1/n_samp) * ld_score + n_snp/n_samp
@@ -128,8 +143,7 @@
 
   return(list(
     slope = h_est,
-    incpt = incpt,
-    kappa = kappa
+    incpt = incpt
   ))
 }
 
@@ -192,12 +206,14 @@
   den_init <- sum(w_step1 * A_xy^2)
   h_xy_init <- num_init / den_init
 
-  # Fast Intercept (Step 1)
-  sum_w    <- sum(w_step1)
-  mean_y_w <- sum(w_step1 * M_xy) / sum_w
-  mean_x_w <- sum(w_step1 * A_xy) / sum_w
-  v_xy_init <- mean_y_w - h_xy_init * mean_x_w
 
+  # ---  Back-Calculate Intercept (Constrained Eq 2) ---
+  # (No/NxNy) * Sigma_XY = (M * No / NxNy) * h_xy + v_xy
+  # Let "Total Noise" = (No/NxNy) * Sigma_XY
+  # Let "Scaling"     = (M * No / NxNy)
+
+  # Note: term_N is exactly (M * No / Ny), so we reuse it!
+  v_xy_init <- total_noise_term -  h_xy_init * term_N
   # --- 3. Step 2: Final WLS Weights ---
   # Part 1: Product of single expectations (Passed from Single-Trait Engine)
   prod_expectations <- res_XX$E_total_sq * res_YY$E_total_sq
@@ -231,6 +247,8 @@
 #' @description Performs unweighted regression (w=1).
 #' Used as a baseline to demonstrate the value of WLS.
 #' @keywords internal
+#'
+
 .estimate_hxy_ols <- function(betaX, betaY,
                               ld_score, covXY_theory,
                               n_snp, n_x, n_y, overlap_prop) {
@@ -254,6 +272,6 @@
 
   return(list(
     slope = h_xy_est,
-    incpt = incpt
+    incpt = incpt_final
   ))
 }

@@ -66,29 +66,29 @@ CIVSO <- function(betaX, betaY, seX, seY, ld_score, n_snp, n_x, n_y, overlap_pro
 
 # Calculate OLS estimates for h_xx, h_yy, h_xy
 
-ols_XX <- .estimate_h2_ols(betaX, seX, ld_score, n_snp, n_x)
-ols_YY <- .estimate_h2_ols(betaY, seY, ld_score, n_snp, n_y) # You might need to write this wrapper
-ols_XY <- .estimate_hxy_ols(betaX, betaY, ld_score, covXY_theory, n_snp,n_x, n_y, overlap_prop) # You already have this in engines_diagonal_dMAR.R
+#ols_XX <- .estimate_h2_ols(betaX, seX, ld_score, n_snp, n_x)
+#ols_YY <- .estimate_h2_ols(betaY, seY, ld_score, n_snp, n_y) # You might need to write this wrapper
+#ols_XY <- .estimate_hxy_ols(betaX, betaY, ld_score, covXY_theory, n_snp,n_x, n_y, overlap_prop) # You already have this in engines_diagonal_dMAR.R
 
 # Extract OLS Parameters
-h_xx_calib <- ols_XX$slope;  v_x_calib <- ols_XX$incpt
-h_yy_calib <- ols_YY$slope;  v_y_calib <- ols_YY$incpt
-h_xy_calib <- ols_XY$slope;  v_xy_calib <- ols_XY$incpt
+#h_xx_calib <- ols_XX$slope;  v_x_calib <- ols_XX$incpt
+#h_yy_calib <- ols_YY$slope;  v_y_calib <- ols_YY$incpt
+#h_xy_calib <- ols_XY$slope;  v_xy_calib <- ols_XY$incpt
 
 # 3. Compute Variance using OLS Inputs
 # -----------------------------------
 
 
-se_analytic <- .compute_analytic_variance(
-    blocks = blocks,
-   beta_hat =beta_point,
+#se_analytic <- .compute_analytic_variance(
+#    blocks = blocks,
+#   beta_hat =beta_point,
     # PASS OLS PARAMETERS HERE:
-    h_xx = h_xx_calib, v_x = v_x_calib,
-    h_yy = h_yy_calib, v_y = v_y_calib,
-    h_xy = h_xy_calib, v_xy = v_xy_calib,
+#    h_xx = h_xx_calib, v_x = v_x_calib,
+#    h_yy = h_yy_calib, v_y = v_y_calib,
+ #   h_xy = h_xy_calib, v_xy = v_xy_calib,
 
-    n_snp = n_snp, n_x = n_x, n_y = n_y, overlap_prop = overlap_prop
-)
+  #  n_snp = n_snp, n_x = n_x, n_y = n_y, overlap_prop = overlap_prop
+#)
 
 # ===========================================================================
 # 4. Variance Calibration (Hybrid OLS)

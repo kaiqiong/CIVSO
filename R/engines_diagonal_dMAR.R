@@ -93,7 +93,7 @@
     slope = h_final,
     incpt = incpt_final,
     E_total_sq = E_sq_moment, # Needed for cross-trait weighting
-    kappa = kappa
+    w_final = w_final  # <--- Add this line
   ))
 }
 

@@ -137,7 +137,7 @@
   return(list(
     beta = num_sum / den_sum,
     denom_value = den_sum,
-
+w_final = calib_X$w_final,
     # Final (Used) Parameters
     params = list(
       h_xx = h_xx_use, v_x = v_x_use,
